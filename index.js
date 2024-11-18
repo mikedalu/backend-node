@@ -3,18 +3,38 @@
 const bcrypt = require("bcrypt");
 const { User, sequelize } = require("./db.js");
 const express = require("express");
+const jwt = require("jsonwebtoken");
 const app = express();
-
+const dotenv = require("dotenv");
+const { authenticateToken, checkIfUserExist } = require("./authMiddleware.js");
+dotenv.config();
 app.use(express.json());
 
 app.post("/login", async (req, res) => {
 	//login route
-	console.log(req.body);
+	const { email, password } = req.body;
+	const secret = process.env.SECRET_KEY;
+	try {
+		const user = await User.findOne({ where: { email } });
 
-	res.status(400).json({ message: "Nice one bro, " });
+		if (!user) {
+			return res.status(404).json({ message: "User not registered" });
+		}
+		//check password
+		const isValidPassword = await bcrypt.compare(password, user.password);
+		if (!isValidPassword) {
+			return res.status(401).json({ message: "Invalid password" });
+		} else {
+			const token = jwt.sign({ id: user.id, email: user.email }, secret, { expiresIn: "1h" });
+
+			return res.status(200).json({ message: "Login successful", data: { accessToken: token } });
+		}
+	} catch (error) {
+		res.status(500).json({ message: "Error logging in", error });
+	}
 });
 
-app.post("/register", async (req, res) => {
+app.post("/register", checkIfUserExist, async (req, res) => {
 	const { firstName, email, password } = req.body;
 	console.log(req.body);
 
@@ -32,13 +52,18 @@ app.post("/register", async (req, res) => {
 	}
 });
 
-app.get("/user", async (req, res) => {
+app.get("/users", async (req, res) => {
 	try {
-		const users = await User.findAll({ attributes: ["id", "userName", "email", "password"] });
+		const users = await User.findAll({ attributes: ["id", "userName", "email"] });
 		res.status(200).json({ data: users, message: "All users fetched" });
 	} catch (error) {
 		res.status(400).json({ message: "Error fetching users" });
 	}
+});
+
+app.get("/user", authenticateToken, (req, res) => {
+	console.log(req.user);
+	res.status(200).json({ message: "User authenticated", data: req.user });
 });
 
 app.get("/", (req, res) => {
